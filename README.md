@@ -1,1 +1,0 @@
-# cerelytic-health-monorepo
