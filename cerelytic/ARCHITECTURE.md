@@ -28,7 +28,7 @@
 * **Stack:** Python (FastAPI wrapper for endpoints, but primarily a Worker process).
 * **Libraries:** `pytesseract` / `pdfplumber` (OCR), `LangChain` / `LiteLLM` (LLM Abstraction).
 * **Responsibility:**
-    * Listens for `analysis_jobs`.
+    * Listens for `bill-analysis-jobs`.
     * Retrieves file from Blob Storage.
     * Performs OCR and Text Structuring.
     * Runs LLM compliance checks (PM-JAY rules).
@@ -52,7 +52,7 @@
 
 The system uses an asynchronous job processing pattern to handle bill analysis:
 
-1. **Bill Creation:** `POST /bills` creates a bill record, enqueues an `analysis_job` in Redis, and returns the `billId`.
+1. **Bill Creation:** `POST /bills` creates a bill record, enqueues a job in Redis queue 'bill-analysis-jobs', and returns the `billId`.
 2. **Job Processing:** The Worker service pulls jobs from the Redis queue, performs OCR and analysis, and updates the database with results.
 3. **Result Retrieval:** `GET /bills/{billId}` returns the current status and analysis results when ready.
 

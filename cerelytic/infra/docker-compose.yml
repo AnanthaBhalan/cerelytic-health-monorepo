@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres:
@@ -30,42 +30,48 @@ services:
   manager-api:
     build:
       context: ../manager-api
-      dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://cerelytic:password@postgres:5432/cerelytic
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: dev-secret-key-change-in-production
+    env_file:
+      - ../.env.example
+      - ../manager-api/.env.example
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   worker:
     build:
       context: ../worker
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql://cerelytic:password@postgres:5432/cerelytic
-      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - ../.env.example
+      - ../worker/.env.example
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   frontend:
     build:
       context: ../frontend
-      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_MANAGER_API_URL: http://manager-api:8000
+      NEXT_PUBLIC_MANAGER_API_URL: http://localhost:8000
     depends_on:
       manager-api:
         condition: service_healthy

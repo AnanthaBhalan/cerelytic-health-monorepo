@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from database import get_db, create_tables
 from models import User, Bill, Analysis, BillStatus
@@ -20,24 +20,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------- Dependency to get user id ----------
+def get_user_id(x_user_id: str = Header(...)):
+    if not x_user_id.strip():
+        raise HTTPException(status_code=400, detail="X-User-Id header required")
+    return x_user_id
+
+
 @app.on_event("startup")
 async def startup_event():
     create_tables()
 
-@app.post("/bills", status_code=status.HTTP_202_ACCEPTED, response_model=dict)
+
+# ---------- POST /bills ----------
+@app.post("/bills", status_code=status.HTTP_202_ACCEPTED)
 async def create_bill(
     bill_data: BillCreate,
+    user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new bill and enqueue it for analysis.
-    
-    For now, we assume user_id=1 (stubbed auth).
-    """
-    # TODO: Replace with actual auth - get user_id from JWT token
-    user_id = 1
-    
-    # Create bill record
     db_bill = Bill(
         user_id=user_id,
         file_url=bill_data.file_url,
@@ -46,47 +47,81 @@ async def create_bill(
     db.add(db_bill)
     db.commit()
     db.refresh(db_bill)
-    
-    # Enqueue analysis job
-    job_enqueued = enqueue_analysis_job(db_bill.id, bill_data.file_url)
+
+    job_enqueued = enqueue_analysis_job(db_bill.id, user_id)
+
     if not job_enqueued:
-        # Update bill status to failed if job enqueue fails
         db_bill.status = BillStatus.FAILED
         db.commit()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail="Failed to enqueue analysis job"
         )
-    
+
     return {
         "bill_id": db_bill.id,
         "status": db_bill.status.value
     }
 
+
+# ---------- GET /bills ----------
+@app.get("/bills", response_model=List[BillWithAnalysisResponse])
+async def list_bills(
+    status_filter: Optional[BillStatus] = None,
+    limit: int = 10,
+    offset: int = 0,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db)
+):
+    query = (
+        db.query(Bill)
+        .filter(Bill.user_id == user_id)
+    )
+
+    if status_filter:
+        query = query.filter(Bill.status == status_filter)
+
+    bills = (
+        query
+        .order_by(Bill.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    return bills
+
+
+# ---------- GET /bills/{bill_id} ----------
 @app.get("/bills/{bill_id}", response_model=BillWithAnalysisResponse)
 async def get_bill(
     bill_id: int,
+    user_id: str = Depends(get_user_id),
     db: Session = Depends(get_db)
 ):
-    """Get bill status and analysis results if available."""
-    bill = db.query(Bill).filter(Bill.id == bill_id).first()
+    bill = (
+        db.query(Bill)
+        .filter(Bill.id == bill_id, Bill.user_id == user_id)
+        .first()
+    )
+
     if not bill:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             detail="Bill not found"
         )
-    
-    # TODO: Add authorization check - ensure user can only access their own bills
-    
+
     return bill
 
+
+# ---------- Health ----------
 @app.get("/healthz", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint."""
     return HealthResponse(
         status="healthy",
         timestamp=datetime.utcnow()
     )
+
 
 if __name__ == "__main__":
     import uvicorn
