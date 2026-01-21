@@ -70,7 +70,7 @@ def create_bill(
     db.refresh(bill)
 
     # enqueue worker job
-    enqueue_analysis_job(bill.id)
+    enqueue_analysis_job(bill.id, user_id)
 
     return bill
 

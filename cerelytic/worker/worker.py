@@ -1,12 +1,16 @@
 from database import get_db
-from models import Bill
+from models import Bill, BillStatus
 from processor import process_bill
 from redis_client import dequeue_analysis_job
 
 
 def main():
     while True:
-        bill_id = dequeue_analysis_job()
+        job = dequeue_analysis_job()
+        if not job:
+            continue
+
+        bill_id = job.get('bill_id')
         if not bill_id:
             continue
 
@@ -16,7 +20,7 @@ def main():
         if not bill:
             continue
 
-        bill.status = "PROCESSING"
+        bill.status = BillStatus.PROCESSING
         db.commit()
 
         process_bill(bill, db)
